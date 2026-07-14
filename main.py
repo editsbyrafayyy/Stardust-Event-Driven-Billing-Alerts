@@ -34,7 +34,16 @@ def write_subscriptions(sub: Subscriptions):
 def read_subscriptions(id: uuid.UUID): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
 # a UUID object and reject requests that don't fit the UUID shape 
 	if id in temp_db:
-		return {id: temp_db[id]} # here the temp_db[id] gives us the user-data (that is what I implemented in the post req) so we should return the id as well
+		return {"id": id, **temp_db[id]} # here the temp_db[id] gives us the user-data (that is what I implemented in the post req) so we should return the id as well
 	else:
 		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
 
+@app.delete("/subscriptions/{id}")
+def delete_subscriptions(id: uuid.UUID):
+	if id in temp_db:
+		deleted_data = temp_db[id] #storing it temporarily so I can reference it in a message then
+		del temp_db[id] # we use the del built in function to delete the entry
+		return {"message": f"Subscription '{deleted_data['name']}' has been deleted", "id": id, **deleted_data}
+		# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
+	else:
+		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
