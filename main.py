@@ -26,6 +26,13 @@ class SubscriptionsUpdate(BaseModel): # this class is introduced as there will b
 	description: Optional[str] = None
 
 
+def get_subscription_or_404(id: uuid.UUID) -> dict: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
+	if id in temp_db:
+		return temp_db[id]
+	else: 
+		raise HTTPException(status_code= 404, detail= "Id not found!")
+
+
 @app.post("/subscriptions")
 def write_subscriptions(sub: Subscriptions):
 	id = uuid.uuid4() # generates a random id
@@ -39,31 +46,23 @@ def write_subscriptions(sub: Subscriptions):
 	'''
 
 @app.get("/subscriptions/{id}") # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
-def read_subscriptions(id: uuid.UUID): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
+def get_subscriptions(id: uuid.UUID): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
 # a UUID object and reject requests that don't fit the UUID shape 
-	if id in temp_db:
-		return {"id": id, **temp_db[id]} # here the temp_db[id] gives us the user-data (that is what I implemented in the post req) so we should return the id as well
-	else:
-		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
+	data_get = get_subscription_or_404(id) # we simply pass the id into the function to get the entry that we are looking for  
+	return {"id": id, **data_get}
 
 @app.delete("/subscriptions/{id}") # delete
 def delete_subscriptions(id: uuid.UUID):
-	if id in temp_db:
-		deleted_data = temp_db[id] #storing it temporarily so I can reference it in a message then
-		del temp_db[id] # we use the del built in function to delete the entry
-		return {"message": f"Subscription '{deleted_data['name']}' has been deleted", "id": id, **deleted_data}
+	deleted_data = get_subscription_or_404(id)
+	del temp_db[id] # we use the del built in function to delete the entry
+	return {"message": f"Subscription '{deleted_data['name']}' has been deleted", "id": id, **deleted_data}
 		# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
-	else:
-		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
 
 @app.patch("/subscriptions/{id}") # patch
 def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate): # we will need to convert the pydantic model into a dict hence the parameters
-	if id in temp_db:
-		old_data = temp_db[id] # extra step not actually needed
-		new_data = update_data.model_dump(exclude_unset=True) # this allows pydantic to identify which field the user wants to explicity change, instead
-		# of returning all the fields which would result in all the remaining fields being overwritten with None which we don't want
-		temp_db[id] = {**old_data, **new_data} 
-		return {"id":id, **temp_db[id]} # we still follow the same pattern we did for other requests key:values id: all attr in the temp_db for that id
-	else:
-		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
-
+	old_data = get_subscription_or_404(id)
+	new_data = update_data.model_dump(exclude_unset=True)  
+	''' this allows pydantic to identify which field the user wants to explicity change, instead
+	of returning all the fields which would result in all the remaining fields being overwritten with None which we don't want '''
+	temp_db[id] = {**old_data, **new_data} 
+	return {"id":id, **temp_db[id]} # we still follow the same pattern we did for other requests key:values id: all attr in the temp_db for that id
