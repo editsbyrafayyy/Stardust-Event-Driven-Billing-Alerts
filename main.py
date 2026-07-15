@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import uuid
-from typing import Optional
+import uuid # assigning unique ids to each entry in the table
+from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
 
 app = FastAPI()
 
@@ -11,12 +11,11 @@ def read_root():
 
 temp_db = {}
 
-class Subscriptions(BaseModel):
+class Subscriptions(BaseModel): # the base class that is used for get/post/delete as we modify/add all the attributes at once instead of specific ones
 	name: str
 	cost: float	
 	billing_cycle: str
 	description: str
-
 
 class SubscriptionsUpdate(BaseModel): # this class is introduced as there will be a difference in the input/output shape for when we add a patch request
 	# the way a patch request works is that it only changes specific attr, instead of all, which means we can't just overwrite everything instead only
@@ -46,7 +45,6 @@ def read_subscriptions(id: uuid.UUID): # we make sure that the id is mapped curr
 		return {"id": id, **temp_db[id]} # here the temp_db[id] gives us the user-data (that is what I implemented in the post req) so we should return the id as well
 	else:
 		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
-
 
 @app.delete("/subscriptions/{id}") # delete
 def delete_subscriptions(id: uuid.UUID):
