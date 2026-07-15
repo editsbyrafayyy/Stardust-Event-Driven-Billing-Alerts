@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException,status
 from pydantic import BaseModel
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
@@ -30,10 +30,10 @@ def get_subscription_or_404(id: uuid.UUID) -> dict: # I have created a  helper f
 	if id in temp_db:
 		return temp_db[id]
 	else: 
-		raise HTTPException(status_code= 404, detail= "Id not found!")
+		raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail= "Id not found!")
 
 
-@app.post("/subscriptions")
+@app.post("/subscriptions", status_code = status.HTTP_201_CREATED)
 def write_subscriptions(sub: Subscriptions):
 	id = uuid.uuid4() # generates a random id
 	user_data = sub.model_dump() # the newer version of changing a model obj into a dict 
