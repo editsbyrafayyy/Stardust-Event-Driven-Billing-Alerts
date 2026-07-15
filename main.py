@@ -25,6 +25,11 @@ class SubscriptionsUpdate(BaseModel): # this class is introduced as there will b
 	billing_cycle: Optional[str] = None
 	description: Optional[str] = None
 
+class SubscriptionOut(Subscriptions):
+	id: uuid.UUID
+
+class SubscriptionDelete(SubscriptionOut): # as we also need id which SubOut has not the main Sub class
+	message: str
 
 def get_subscription_or_404(id: uuid.UUID) -> dict: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
 	if id in temp_db:
@@ -33,7 +38,8 @@ def get_subscription_or_404(id: uuid.UUID) -> dict: # I have created a  helper f
 		raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail= "Id not found!")
 
 
-@app.post("/subscriptions", status_code = status.HTTP_201_CREATED)
+@app.post("/subscriptions", status_code = status.HTTP_201_CREATED, response_model = SubscriptionOut)
+# its important to note that a response model strictly binds what the output schema will be for the request type
 def write_subscriptions(sub: Subscriptions):
 	id = uuid.uuid4() # generates a random id
 	user_data = sub.model_dump() # the newer version of changing a model obj into a dict 
@@ -45,20 +51,20 @@ def write_subscriptions(sub: Subscriptions):
 	that makes the code easier to read as we already did turn the obj into a dict using the model.dump function
 	'''
 
-@app.get("/subscriptions/{id}") # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
+@app.get("/subscriptions/{id}", response_model = SubscriptionOut) # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
 def get_subscriptions(id: uuid.UUID): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
 # a UUID object and reject requests that don't fit the UUID shape 
 	data_get = get_subscription_or_404(id) # we simply pass the id into the function to get the entry that we are looking for  
 	return {"id": id, **data_get}
 
-@app.delete("/subscriptions/{id}") # delete
+@app.delete("/subscriptions/{id}", response_model = SubscriptionDelete) # delete
 def delete_subscriptions(id: uuid.UUID):
 	deleted_data = get_subscription_or_404(id)
 	del temp_db[id] # we use the del built in function to delete the entry
 	return {"message": f"Subscription '{deleted_data['name']}' has been deleted", "id": id, **deleted_data}
 		# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
 
-@app.patch("/subscriptions/{id}") # patch
+@app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
 def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate): # we will need to convert the pydantic model into a dict hence the parameters
 	old_data = get_subscription_or_404(id)
 	new_data = update_data.model_dump(exclude_unset=True)  
