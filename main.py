@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 import uuid
+from typing import Optional
 
 app = FastAPI()
 
@@ -17,12 +18,20 @@ class Subscriptions(BaseModel):
 	description: str
 
 
+class SubscriptionsUpdate(BaseModel): # this class is introduced as there will be a difference in the input/output shape for when we add a patch request
+	# the way a patch request works is that it only changes specific attr, instead of all, which means we can't just overwrite everything instead only
+	# certain attr that the user wants to, for that to work we need to ensure that the attr are set to None by default so only set attr can be changed
+	name: Optional[str] = None
+	cost: Optional[float] = None	
+	billing_cycle: Optional[str] = None
+	description: Optional[str] = None
+
+
 @app.post("/subscriptions")
 def write_subscriptions(sub: Subscriptions):
 	id = uuid.uuid4() # generates a random id
 	user_data = sub.model_dump() # the newer version of changing a model obj into a dict 
 	temp_db[id] = user_data 
-
 
 	return {"id": id, **user_data} 
 	''' 
@@ -38,7 +47,8 @@ def read_subscriptions(id: uuid.UUID): # we make sure that the id is mapped curr
 	else:
 		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
 
-@app.delete("/subscriptions/{id}")
+
+@app.delete("/subscriptions/{id}") # delete
 def delete_subscriptions(id: uuid.UUID):
 	if id in temp_db:
 		deleted_data = temp_db[id] #storing it temporarily so I can reference it in a message then
@@ -47,3 +57,15 @@ def delete_subscriptions(id: uuid.UUID):
 		# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
 	else:
 		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
+
+@app.patch("/subscriptions/{id}") # patch
+def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate): # we will need to convert the pydantic model into a dict hence the parameters
+	if id in temp_db:
+		old_data = temp_db[id] # extra step not actually needed
+		new_data = update_data.model_dump(exclude_unset=True) # this allows pydantic to identify which field the user wants to explicity change, instead
+		# of returning all the fields which would result in all the remaining fields being overwritten with None which we don't want
+		temp_db[id] = {**old_data, **new_data} 
+		return {"id":id, **temp_db[id]} # we still follow the same pattern we did for other requests key:values id: all attr in the temp_db for that id
+	else:
+		raise HTTPException(status_code = 404, detail = "The Subscription was not Found")
+
