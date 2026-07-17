@@ -2,8 +2,13 @@ from fastapi import FastAPI, HTTPException,status
 from pydantic import BaseModel
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
+from models import Subscription # the subs class from models.py
+from db import Base, engine # the Base class alongside engine from db.py
 
-app = FastAPI()
+Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
+# the connection with the information about the table layouts that it needs.
+
+app = FastAPI() # create an object of the type
 
 @app.get("/")
 def read_root():
@@ -45,12 +50,15 @@ def write_subscriptions(sub: Subscriptions):
 	user_data = sub.model_dump() # the newer version of changing a model obj into a dict 
 	temp_db[id] = user_data 
 
-	return {"id": id, **user_data} 
 	''' 
 	instead of 	return {"id": id, "name": sub.name, "cost": sub.cost, "billing_cycle": sub.billing_cycle, "description":sub.description} we use dict unpacking 
 	that makes the code easier to read as we already did turn the obj into a dict using the model.dump function
 	'''
 
+	return {"id": id, **user_data} 
+
+
+# the shape of the data is a template that the return data has to fit in, any access data is filtered out/removed 
 @app.get("/subscriptions/{id}", response_model = SubscriptionOut) # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
 def get_subscriptions(id: uuid.UUID): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
 # a UUID object and reject requests that don't fit the UUID shape 
