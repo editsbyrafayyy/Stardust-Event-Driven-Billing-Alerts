@@ -4,6 +4,7 @@ import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
 from models import Subscription # the subs class from models.py
 from db import Base, engine, get_db # the Base class alongside engine from db.py
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
@@ -14,8 +15,6 @@ app = FastAPI() # create an object of the type
 @app.get("/")
 def read_root():
 	return {"Hey" : "Working"}
-
-temp_db = {}
 
 class Subscriptions(BaseModel): # the base class that is used for get/post/delete as we modify/add all the attributes at once instead of specific ones
 	name: str
@@ -42,7 +41,8 @@ class SubscriptionDelete(SubscriptionOut): # as we also need id which SubOut has
 	model_config = {"from_attributes": True}
 
 def get_subscription_or_404(id: uuid.UUID, db: Session) -> Subscription: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
-	result = db.query(Subscription).filter(Subscription.id == id).first()
+	result = db.query(Subscription).filter(Subscription.id == id).first() # this fetches the first row that meets the condition
+	# we use the db.query() method to find the data and filter is based on if id == id, then return the first row that meets the filter criteria
 	if result:
 		return result
 	else: 
@@ -68,23 +68,27 @@ def write_subscriptions(sub: Subscriptions, db: Session = Depends(get_db)):
 
 # the shape of the data is a template that the return data has to fit in, any access data is filtered out/removed 
 @app.get("/subscriptions/{id}", response_model = SubscriptionOut) # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
-def get_subscriptions(id: uuid.UUID): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
+def get_subscriptions(id: uuid.UUID, db: Session = Depends(get_db)): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
 # a UUID object and reject requests that don't fit the UUID shape 
-	data_get = get_subscription_or_404(id) # we simply pass the id into the function to get the entry that we are looking for  
-	return {"id": id, **data_get}
+	data_get = get_subscription_or_404(id, db) # we simply pass the id into the function to get the entry that we are looking for  
+	return data_get
 
 @app.delete("/subscriptions/{id}", response_model = SubscriptionDelete) # delete
-def delete_subscriptions(id: uuid.UUID):
-	deleted_data = get_subscription_or_404(id)
-	del temp_db[id] # we use the del built in function to delete the entry
-	return {"message": f"Subscription '{deleted_data['name']}' has been deleted", "id": id, **deleted_data}
-		# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
+def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db)):
+	deleted_data = get_subscription_or_404(id, db)
+	clean_data = SubscriptionOut.model_validate(deleted_data).model_dump(exclude={"id"}) # this will return a python dict 
+	
+	db.delete(deleted_data) # we use .delete() method to remove the specific row
+	db.commit()
 
-@app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
-def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate): # we will need to convert the pydantic model into a dict hence the parameters
-	old_data = get_subscription_or_404(id)
-	new_data = update_data.model_dump(exclude_unset=True)  
-	''' this allows pydantic to identify which field the user wants to explicity change, instead
-	of returning all the fields which would result in all the remaining fields being overwritten with None which we don't want '''
-	temp_db[id] = {**old_data, **new_data} 
-	return {"id":id, **temp_db[id]} # we still follow the same pattern we did for other requests key:values id: all attr in the temp_db for that id
+	return {"message": f"Subscription '{clean_data['name']}' has been deleted", "id": id, **clean_data}
+	# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
+
+# @app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
+# def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, , db: Session = Depends(get_db)): # we will need to convert the pydantic model into a dict hence the parameters
+# 	old_data = get_subscription_or_404(id, db)
+# 	new_data = update_data.model_dump(exclude_unset=True)  
+# 	''' this allows pydantic to identify which field the user wants to explicity change, instead
+# 	of returning all the fields which would result in all the remaining fields being overwritten with None which we don't want '''
+# 	temp_db[id] = {**old_data, **new_data} 
+# 	return {"id":id, **temp_db[id]} # we still follow the same pattern we did for other requests key:values id: all attr in the temp_db for that id
