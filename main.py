@@ -30,6 +30,7 @@ class SubscriptionsUpdate(BaseModel): # this class is introduced as there will b
 	cost: Optional[float] = None	
 	billing_cycle: Optional[str] = None
 	description: Optional[str] = None
+	model_config = {"from_attributes": True}
 
 class SubscriptionOut(Subscriptions):
 	id: uuid.UUID
@@ -38,10 +39,12 @@ class SubscriptionOut(Subscriptions):
 
 class SubscriptionDelete(SubscriptionOut): # as we also need id which SubOut has not the main Sub class
 	message: str
+	model_config = {"from_attributes": True}
 
-def get_subscription_or_404(id: uuid.UUID) -> dict: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
-	if id in temp_db:
-		return temp_db[id]
+def get_subscription_or_404(id: uuid.UUID, db: Session) -> Subscription: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
+	result = db.query(Subscription).filter(Subscription.id == id).first():
+	if result:
+		return result
 	else: 
 		raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail= "Id not found!")
 
