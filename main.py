@@ -42,7 +42,7 @@ class SubscriptionDelete(SubscriptionOut): # as we also need id which SubOut has
 	model_config = {"from_attributes": True}
 
 def get_subscription_or_404(id: uuid.UUID, db: Session) -> Subscription: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
-	result = db.query(Subscription).filter(Subscription.id == id).first():
+	result = db.query(Subscription).filter(Subscription.id == id).first()
 	if result:
 		return result
 	else: 
