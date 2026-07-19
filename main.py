@@ -4,7 +4,6 @@ import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
 from models import Subscription # the subs class from models.py
 from db import Base, engine, get_db # the Base class alongside engine from db.py
-from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
@@ -84,11 +83,18 @@ def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db)):
 	return {"message": f"Subscription '{clean_data['name']}' has been deleted", "id": id, **clean_data}
 	# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
 
-# @app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
-# def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, , db: Session = Depends(get_db)): # we will need to convert the pydantic model into a dict hence the parameters
-# 	old_data = get_subscription_or_404(id, db)
-# 	new_data = update_data.model_dump(exclude_unset=True)  
-# 	''' this allows pydantic to identify which field the user wants to explicity change, instead
-# 	of returning all the fields which would result in all the remaining fields being overwritten with None which we don't want '''
-# 	temp_db[id] = {**old_data, **new_data} 
-# 	return {"id":id, **temp_db[id]} # we still follow the same pattern we did for other requests key:values id: all attr in the temp_db for that id
+@app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
+def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Session = Depends(get_db)): # we will need to convert the pydantic model into a dict hence the parameters
+	existing_data = get_subscription_or_404(id, db)
+	new_data = update_data.model_dump(exclude_unset=True)
+
+	for key, val in new_data.items():
+		setattr(existing_data, key, val) # settattr bypasses the conventional dot notation limitations. As in this instance, we don't know the attr "key" has
+		# but using settatrr we can simply get that column name on runtime and modify the value
+
+	db.commit()
+	db.refresh(existing_data)
+
+	return existing_data
+
+
