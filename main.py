@@ -2,9 +2,11 @@ from fastapi import FastAPI, HTTPException,status, Depends
 from pydantic import BaseModel
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
-from models import Subscription # the subs class from models.py
+from models import Subscription, User # the subs class from models.py
 from db import Base, engine, get_db # the Base class alongside engine from db.py
 from sqlalchemy.orm import Session
+from schemas import UserCreate, UserOut
+from auth import hash_password, verify_password
 
 Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
 # the connection with the information about the table layouts that it needs.
@@ -100,4 +102,20 @@ def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Se
 
 	return existing_data
 
+# ========================== Register
 
+@app.post("/register", response_model=UserOut)
+def add_user(user: UserCreate, db: Session = Depends(get_db)):
+	user_data = user.model_dump()
+	hashed_password = hash_password(user_data["password"]) # we pass the password for hashing
+
+	data_insertion = User(
+		username=user_data["username"],
+		hashed_password=hashed_password
+		)
+
+	db.add(data_insertion)
+	db.commit()
+	db.refresh(data_insertion)
+
+	return data_insertion
