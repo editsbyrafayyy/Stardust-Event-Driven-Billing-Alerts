@@ -6,6 +6,7 @@ from an API request) BaseSettings looks at os environment variables/files to fet
 
 class Settings(BaseSettings): # this class serves as the template for the variables inside it to be mapped to env vars
 	database_url : str # pydantic will automatically search system env/.env files for variables with this name
+	secret_key: str
 
 	model_config = SettingsConfigDict(env_file=".env") # tells pydantic to look inside the .env to find the variable
 

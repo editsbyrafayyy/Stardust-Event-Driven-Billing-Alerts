@@ -1,4 +1,10 @@
 from passlib.context import CryptContext
+from datetime import datetime, timedelta
+from jose import jwt
+from config import settings
+
+SECRET_KEY = settings.secret_key
+ALGORITHM = "HS256"
 
 pass_context = CryptContext(schemes=["bcrypt"], deprecated ="auto")
 '''
@@ -15,3 +21,10 @@ def hash_password(password : str) -> str: # generates a salt, runs the bcrypt al
 
 def verify_password(plain_password: str, hash_password: str) -> bool: # extracts the cost factor and salt from the stored hash and rehashes the entered pass with it
 	return pass_context.verify(plain_password, hash_password)
+
+def create_access_token(data: dict, expires_delta : timedelta = timedelta(minutes=30)) -> str:
+	to_encode = data.copy() # will return a shallow copy of the dict
+	expire = expires_delta + datetime.utcnow() # expire 30 minutes from current time
+	to_encode.update({"exp":expire}) # add the expire time into the data that will be added into the payload of the jwt
+
+	return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) # return the jwt with its data, key and algo

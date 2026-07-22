@@ -104,9 +104,9 @@ def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Se
 
 # ========================== Register
 
-@app.post("/register", response_model=UserOut)
+@app.post("/register", response_model=UserOut) # we use the userout shape to ensure that pass never gets seen
 def add_user(user: UserCreate, db: Session = Depends(get_db)):
-	user_data = user.model_dump()
+	user_data = user.model_dump() # convert the python obj into a dict
 	hashed_password = hash_password(user_data["password"]) # we pass the password for hashing
 
 	data_insertion = User(
