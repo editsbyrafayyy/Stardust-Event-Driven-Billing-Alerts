@@ -6,7 +6,8 @@ from models import Subscription, User # the subs class from models.py
 from db import Base, engine, get_db # the Base class alongside engine from db.py
 from sqlalchemy.orm import Session
 from schemas import UserCreate, UserOut
-from auth import hash_password, verify_password
+from auth import create_access_token, hash_password, verify_password
+from fastapi.security import OAuth2PasswordRequestForm
 
 Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
 # the connection with the information about the table layouts that it needs.
@@ -40,6 +41,13 @@ class SubscriptionOut(Subscriptions):
 class SubscriptionDelete(SubscriptionOut): # as we also need id which SubOut has not the main Sub class
 	message: str
 	model_config = {"from_attributes": True}
+
+class Token(BaseModel): # defining a shape for the Token
+	access_token: str
+	token_type: str = "bearer" # conventional value to use, it tells the client to attach the token to the authorization header as Bearer <token>	
+
+
+# ========================= Helper Function
 
 def get_subscription_or_404(id: uuid.UUID, db: Session) -> Subscription: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
 	# returns an object of type Subscription (SQLalchemy type)
@@ -119,3 +127,18 @@ def add_user(user: UserCreate, db: Session = Depends(get_db)):
 	db.refresh(data_insertion)
 
 	return data_insertion
+
+@app.post("/login", response_model=Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+	result = db.query(User).filter(User.username == form_data.username).first()
+
+	if result and verify_password(form_data.password, result.hashed_password):
+
+		return Token (
+			access_token= create_access_token(data={"sub":result.username}),
+			token_type= "bearer"
+		)
+		
+	else:
+		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect Credentials")
+
