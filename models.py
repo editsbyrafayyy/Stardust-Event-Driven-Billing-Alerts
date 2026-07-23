@@ -10,6 +10,8 @@ class User(Base):
 	hashed_password: Mapped[str] = mapped_column()
 
 	subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="owner") 
+	model_config = {"from_attributes": True}
+
 	''' 
 	relationship works only for python by establishing a relation between the classes, we are able to retrieve a list of Subscriptions.
 	The relation is 1 to many (1 user can have many subscriptions), relationship exists on the python layer only. Additionally, back populate creates a two
