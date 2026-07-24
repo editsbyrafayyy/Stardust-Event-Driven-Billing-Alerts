@@ -14,7 +14,8 @@ services:
     shm_size: 128mb
    #  added a health check which can be used by depends on as it starts db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      # passsed the -d parameter so the correct db name can be set which is different from the username
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,7 +31,7 @@ services:
       SECRET_KEY: ${SECRET_KEY}
     # this ensures that db is started before the app
     depends_on:
-      - db: 
+      db: 
         condition: service_healthy
 
 volumes:
