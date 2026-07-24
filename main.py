@@ -49,14 +49,16 @@ class Token(BaseModel): # defining a shape for the Token
 
 # ========================= Helper Function
 
-def get_subscription_or_404(id: uuid.UUID, db: Session) -> Subscription: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
+def get_subscription_or_404(id: uuid.UUID, db: Session, curr_user : User) -> Subscription: # I have created a  helper function to reduce redundancy in the code, as this part is used in almost all the requests
 	# returns an object of type Subscription (SQLalchemy type)
-	result = db.query(Subscription).filter(Subscription.id == id).first() # this fetches the first row that meets the condition
+	result = db.query(Subscription).filter(Subscription.id == id,  Subscription.owner_id == curr_user.id).first() # this fetches the first row that meets the condition
 	# we use the db.query() method to find the data and filter is based on if id == id, then return the first row that meets the filter criteria
+	# The added condition checks if the user logged in is the same user fetching the data, if the id's are different 404 is raised automatically
 	if result:
 		return result
 	else: 
 		raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail= "Id not found!")
+
 
 
 @app.post("/subscriptions", status_code = status.HTTP_201_CREATED, response_model = SubscriptionOut)
@@ -84,14 +86,14 @@ def write_subscriptions(sub: Subscriptions, db: Session = Depends(get_db), curr_
 
 # the shape of the data is a template that the return data has to fit in, any access data is filtered out/removed 
 @app.get("/subscriptions/{id}", response_model = SubscriptionOut) # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
-def get_subscriptions(id: uuid.UUID, db: Session = Depends(get_db)): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
+def get_subscriptions(id: uuid.UUID, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
 # a UUID object and reject requests that don't fit the UUID shape 
-	data_get = get_subscription_or_404(id, db) # we simply pass the id into the function to get the entry that we are looking for  
+	data_get = get_subscription_or_404(id, db, curr_user) # we simply pass the id into the function to get the entry that we are looking for  
 	return data_get # returns us an object with the 
 
 @app.delete("/subscriptions/{id}", response_model = SubscriptionDelete) # delete
-def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db)):
-	deleted_data = get_subscription_or_404(id, db)
+def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)):
+	deleted_data = get_subscription_or_404(id, db, curr_user)
 	clean_data = SubscriptionOut.model_validate(deleted_data).model_dump(exclude={"id"}) # this will return a python dict 
 	# model_validate converts the data into a pydantic model and model_dump then into a dict
 	db.delete(deleted_data) # we use .delete() method to remove the specific row
@@ -101,8 +103,8 @@ def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db)):
 	# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
 
 @app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
-def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Session = Depends(get_db)): # we will need to convert the pydantic model into a dict hence the parameters
-	existing_data = get_subscription_or_404(id, db)
+def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)): # we will need to convert the pydantic model into a dict hence the parameters
+	existing_data = get_subscription_or_404(id, db, curr_user)
 	new_data = update_data.model_dump(exclude_unset=True)
 	# exclude_unset only includes the fields that the client explicitly sent in the request
 
