@@ -5,8 +5,9 @@ from config import settings
 # execution, and parsing logic to make it all work. ORM automates all this by being able to perform mapping and SQL generation while working only with python methods/objects
 
 engine = create_engine(settings.database_url) # engine refers to the pool of physical connections with the db, we connect it with our DB with the DB_URL that we pass
-
+# engine is a connection pool which keeps persistent TCP connections and they are handed out as needed
 SessionLocal = sessionmaker(autocommit= False, autoflush= True, bind= engine) 
+# Session Local creates sessions on demand (used in get_db)
 '''
 Eventhough autocommit is set to False by default and autoflush to True by default. Autoflush here means that whenever a query is to be run
 SQLAlchemy syncs/gets the changes made, so the data that is interacted with is upto date. (the idea is similar to how google doc would
