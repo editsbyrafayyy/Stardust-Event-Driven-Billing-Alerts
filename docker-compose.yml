@@ -12,6 +12,26 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     shm_size: 128mb
+   #  added a health check which can be used by depends on as it starts db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sub-app: 
+    build: .
+    ports: 
+      # define the ports we are running it on
+      - "8082:8082"
+    environment:
+      # instead of @localhost we use @db
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      SECRET_KEY: ${SECRET_KEY}
+    # this ensures that db is started before the app
+    depends_on:
+      - db: 
+        condition: service_healthy
 
 volumes:
   postgres_data: 
