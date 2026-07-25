@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException,status, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
 from models import Subscription, User # the subs class from models.py
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from schemas import UserCreate, UserOut
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from fastapi.security import OAuth2PasswordRequestForm
+from datetime import date
 
 Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
 # the connection with the information about the table layouts that it needs.
@@ -18,11 +19,15 @@ app = FastAPI() # create an object of the type
 def read_root():
 	return {"Hey" : "Working"}
 
+# PYDANTIC MODEL CLASSES (PROVIDE INPUT AND OUTPUT SHAPE)
+
 class Subscriptions(BaseModel): # the base class that is used for get/post/delete as we modify/add all the attributes at once instead of specific ones
 	name: str
 	cost: float	
 	billing_cycle: str
 	description: str
+	renewal_time: date = Field(default_factory=date.today) # default factory runs the function at produces a fresh value for each each time
+	# if a value depends on randommness, time or a mutable object default factory is needed to be used.
 
 class SubscriptionsUpdate(BaseModel): # this class is introduced as there will be a difference in the input/output shape for when we add a patch request
 	# the way a patch request works is that it only changes specific attr, instead of all, which means we can't just overwrite everything instead only
@@ -31,6 +36,7 @@ class SubscriptionsUpdate(BaseModel): # this class is introduced as there will b
 	cost: Optional[float] = None	
 	billing_cycle: Optional[str] = None
 	description: Optional[str] = None
+	renewal_date: Optional[date] = None 
 	model_config = {"from_attributes": True}
 
 class SubscriptionOut(Subscriptions):

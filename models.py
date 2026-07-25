@@ -1,7 +1,10 @@
+# SQL Alchemy Models -- enable for communication with the DB by creating columns and relationships.
+
 from db import Base
 from uuid import uuid4, UUID
 from sqlalchemy import String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from datetime import date
 
 class User(Base):
 	__tablename__ = "users"
@@ -29,6 +32,7 @@ class Subscription(Base):
 	cost: Mapped[float] = mapped_column()
 	billing_cycle: Mapped[str] = mapped_column(String(50))
 	description: Mapped[str | None] = mapped_column(String(100))
+	renewal_date: Mapped[date] = mapped_column() # added for celery specifically 
 
 	owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id")) # we create a relation between the tables using the user.id as our foreign key
 

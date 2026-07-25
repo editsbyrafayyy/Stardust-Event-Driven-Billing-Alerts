@@ -1,3 +1,5 @@
+# Establishes the Connection between Python and Postgres
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from config import settings
