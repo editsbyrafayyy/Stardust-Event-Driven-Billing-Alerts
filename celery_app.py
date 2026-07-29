@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 celery_app = Celery(
 	"subscriptions_tasks", # name for the celery app, will be mainly used internally
@@ -7,3 +8,11 @@ celery_app = Celery(
 	# the /0 signals database 0 as redis organizes data into databases 0-15
 	include=["tasks"],
 	)
+
+celery_app.conf.beat_schedule = {
+	"check_upcoming_subs_daily": {
+		"tasks": "tasks.check_upcoming_subs",
+		"schedule": crontab(hour=8, minute=0)
+	},
+
+}
