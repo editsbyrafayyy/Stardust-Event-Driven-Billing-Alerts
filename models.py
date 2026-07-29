@@ -37,3 +37,15 @@ class Subscription(Base):
 	owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id")) # we create a relation between the tables using the user.id as our foreign key
 
 	owner : Mapped["User"] = relationship(back_populates="subscriptions")
+	alert_tab: Mapped[list["Alert"]] = relationship(back_populates="alert_sub")
+
+class Alert(Base):
+	__tablename__ = "alerts"
+
+	id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4, index=True)
+	sub_id : Mapped[UUID] = mapped_column(ForeignKey("subscriptions.id"))
+	renewal_date: Mapped[date] = mapped_column()
+	created_at: Mapped[date] = mapped_column()
+	is_delivered: Mapped[bool] = mapped_column(default=False)
+
+	alert_sub: Mapped["Subscription"] = relationship(back_populates="alert_tab")
