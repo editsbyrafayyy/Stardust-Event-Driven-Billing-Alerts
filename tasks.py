@@ -16,7 +16,7 @@ def check_upcoming_subs():
 			# we are checking to see if 1. the sub id's match for the sub and alert (both from the same service) 2. Their renewal date match, so new entries
 			# are not made for already existing alerts (an alert that has 3 days left will otherwise create 3 new entries for each day it will run which we don't want)
 			result = db.query(Alert).filter(Alert.sub_id == sub.id, Alert.renewal_date == sub.renewal_date).first()
-			if result:
+			if not result:
 				print(f"Subscription: {sub.name} is due on {sub.renewal_date}")
 				# create a Alert type object with all the needed attributes (that match the shape properly)
 				new_alert = Alert(sub_id = sub.id, renewal_date = sub.renewal_date, created_at = date.today())
