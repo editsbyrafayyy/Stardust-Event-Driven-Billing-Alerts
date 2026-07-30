@@ -26,7 +26,7 @@ class Subscriptions(BaseModel): # the base class that is used for get/post/delet
 	cost: float	
 	billing_cycle: str
 	description: str
-	renewal_time: date = Field(default_factory=date.today) # default factory runs the function at produces a fresh value for each each time
+	renewal_date: date = Field(default_factory=date.today) # default factory runs the function at produces a fresh value for each each time
 	# if a value depends on randommness, time or a mutable object default factory is needed to be used.
 
 class SubscriptionsUpdate(BaseModel): # this class is introduced as there will be a difference in the input/output shape for when we add a patch request

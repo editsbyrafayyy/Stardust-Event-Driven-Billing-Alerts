@@ -11,7 +11,7 @@ celery_app = Celery(
 
 celery_app.conf.beat_schedule = {
 	"check_upcoming_subs_daily": {
-		"tasks": "tasks.check_upcoming_subs",
+		"task": "tasks.check_upcoming_subs",
 		"schedule": crontab(hour=8, minute=0)
 	},
 
