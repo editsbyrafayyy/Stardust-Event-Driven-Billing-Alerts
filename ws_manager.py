@@ -28,6 +28,7 @@ class ConnectionManager: # this is the class responsible for managing the web so
 			if not self.active_connections[user_id]:  # if there are no connections left in the list
 				del self.active_connections[user_id]   # remove the user id too from the dict completely so there are no empty slots in the dict
 
+	# the function allows for real time messages to be sent across all the websockets that the user has open.
 	async def send_to_user(self, user_id: UUID, message: str):
 		# if the user has no open connection right now, this silently does nothing -
 		# there's no queueing/persistence here, it's live-or-nothing

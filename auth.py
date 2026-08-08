@@ -37,8 +37,9 @@ def create_access_token(data: dict, expires_delta : timedelta = timedelta(minute
 
 	return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) # return the jwt with its data, key and algo
 
+# Now, this function extracts the token from HTTP Auth header
 # this only works once the user has logged in once and now is sending subsequent requests
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User: # before the function runs
+def get_user_from_token(token: str, db: Session) -> User: # before the function runs
 	# the oauth2_scheme value is calculated as it is a dependency same for get_db
 
 	credentials_exception = HTTPException(
@@ -60,3 +61,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 	if user is None:
 		raise credentials_exception
 	return user
+
+# and now the token is already recieved it just needs to be verified (as WebSockets don't expect a Auth Header instead a query string) so now it gets the token from the query header
+# this way we are able to reuse the same logic for both HTTP (expects Auth Header) and WebSockets (expect query string) without having to change the behaviour
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+	return get_user_from_token(token, db)
