@@ -2,6 +2,13 @@ from celery_app import celery_app
 from datetime import date, timedelta
 from db import SessionLocal
 from models import Subscription, Alert
+import redis
+import json
+
+# plain (blocking) redis client here, not redis.asyncio — this worker process isn't async,
+# so a blocking client is correct and simpler (unlike main.py, which is an async FastAPI app
+# and needs the async client so a blocking Redis call doesn't freeze other requests)
+redis_client = redis.Redis(host="redis", port=6379, db=0)
 
 @celery_app.task # this decorator enables the python function to run async in the background. It provides the function with extra methods such as delay, apply_asynca
 def check_upcoming_subs():
@@ -21,6 +28,13 @@ def check_upcoming_subs():
 				# create a Alert type object with all the needed attributes (that match the shape properly)
 				new_alert = Alert(sub_id = sub.id, renewal_date = sub.renewal_date, created_at = date.today())
 				db.add(new_alert) # add that to the db
+
+				# publish to the "alerts" channel — main.py's redis_listener picks this up and pushes
+				# it live to the owning user's open WebSocket connection(s), if any are open right now
+				redis_client.publish("alerts", json.dumps({
+					"user_id": str(sub.owner_id),
+					"message": f"Subscription '{sub.name}' renews on {sub.renewal_date}"
+				}))
 			else:
 				continue # if it already exists then no need to add again
 
