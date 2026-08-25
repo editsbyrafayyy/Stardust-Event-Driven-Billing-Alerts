@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException,status, Depends
+from fastapi import FastAPI, HTTPException,status, Depends, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel, Field
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
@@ -6,14 +6,19 @@ from models import Subscription, User # the subs class from models.py
 from db import Base, engine, get_db # the Base class alongside engine from db.py
 from sqlalchemy.orm import Session
 from schemas import UserCreate, UserOut
-from auth import create_access_token, get_current_user, hash_password, verify_password
+from auth import create_access_token, get_current_user, get_user_from_token, hash_password, verify_password
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import date
+from ws_manager import ConnectionManager
+import redis.asyncio as aioredis
+import asyncio
+import json
 
 Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
 # the connection with the information about the table layouts that it needs.
 
 app = FastAPI() # create an object of the type
+manager = ConnectionManager() # single shared instance holding all active WebSocket connections, keyed by user id
 
 @app.get("/")
 def read_root():
@@ -154,3 +159,41 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 	else:
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect Credentials")
+
+# ========================== WebSocket
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...), db: Session = Depends(get_db)):
+	# WebSockets can't send a normal Authorization header from browser JS, so the token travels as
+	# a query param instead: ws://.../ws?token=<jwt> — reuses the same verification logic as HTTP auth.
+	try:
+		user = get_user_from_token(token, db)
+	except HTTPException:
+		await websocket.close(code=1008)  # 1008 = policy violation, the standard WS code for "auth failed"
+		return
+
+	await manager.connect(user.id, websocket)
+	try:
+		while True:
+			await websocket.receive_text()  # keeps the connection alive / lets us detect disconnects
+	except WebSocketDisconnect:
+		manager.disconnect(user.id, websocket)
+
+
+async def redis_listener():
+	# runs for the lifetime of the app, independent of any single request.
+	# subscribes to the "alerts" channel that tasks.py publishes to when it creates an Alert row.
+	redis_conn = aioredis.Redis(host="redis", port=6379, db=0)
+	pubsub = redis_conn.pubsub()
+	await pubsub.subscribe("alerts")
+
+	async for message in pubsub.listen():
+		if message["type"] != "message":  # subscribe confirmations also flow through this stream — skip those
+			continue
+		data = json.loads(message["data"])
+		user_id = uuid.UUID(data["user_id"])
+		await manager.send_to_user(user_id, data["message"])
+
+@app.on_event("startup")
+async def start_redis_listener():
+	asyncio.create_task(redis_listener())  # fire-and-forget background task, runs alongside normal request handling
