@@ -8,6 +8,7 @@ from db import Base, engine, get_db, SessionLocal # the Base class alongside eng
 from sqlalchemy.orm import Session
 from schemas import UserCreate, UserOut
 from auth import create_access_token, get_current_user, get_user_from_token, hash_password, verify_password
+from config import settings
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import date
 from ws_manager import ConnectionManager
@@ -18,9 +19,8 @@ import redis
 from redis.exceptions import RedisError
 from datetime import timedelta as td
 
-# plain (blocking) redis client for caching, these routes are still sync def like the rest of
-# the CRUD routes, so a blocking client is the consistent choice here (same reasoning as tasks.py)
-cache_client = redis.Redis(host="redis", port=6379, db=0, decode_responses=True)
+# plain (blocking) redis client for caching
+cache_client = redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=5.0)
 CACHE_TTL_SECONDS = 300  # 5 min safety net, in case an invalidation path is ever missed
 
 def invalidate_user_summary_cache(user_id: uuid.UUID) -> None:
@@ -55,7 +55,7 @@ async def redis_listener():
 	# Subscribes to the "alerts" channel that tasks.py publishes to when an Alert is created.
 	while True:
 		try:
-			redis_conn = aioredis.Redis(host="redis", port=6379, db=0)
+			redis_conn = aioredis.from_url(settings.redis_url)
 			pubsub = redis_conn.pubsub()
 			await pubsub.subscribe("alerts")
 			print("[WebSocket] Successfully subscribed to Redis 'alerts' channel.")

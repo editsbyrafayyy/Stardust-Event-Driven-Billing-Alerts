@@ -2,13 +2,13 @@ from celery_app import celery_app
 from datetime import date, timedelta
 from db import SessionLocal
 from models import Subscription, Alert
+from config import settings
 import redis
 import json
 
 # plain (blocking) redis client here, not redis.asyncio — this worker process isn't async,
-# so a blocking client is correct and simpler (unlike main.py, which is an async FastAPI app
-# and needs the async client so a blocking Redis call doesn't freeze other requests)
-redis_client = redis.Redis(host="redis", port=6379, db=0)
+# so a blocking client is correct and simpler
+redis_client = redis.from_url(settings.redis_url)
 
 @celery_app.task # this decorator enables the python function to run async in the background. It provides the function with extra methods such as delay, apply_asynca
 def check_upcoming_subs():

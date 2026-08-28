@@ -1,0 +1,69 @@
+databases:
+  - name: stardust-db
+    databaseName: stardust
+    user: stardust_user
+    plan: free
+
+services:
+  # 1. Managed Redis Broker & Cache (Internal Only)
+  - type: redis
+    name: stardust-redis
+    ipAllowList: []
+    plan: free
+    maxmemoryPolicy: noeviction
+
+  # 2. FastAPI Web API (Public Web Service)
+  - type: web
+    name: stardust-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stardust-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: stardust-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+
+  # 3. Celery Background Worker (Private Background Worker)
+  - type: worker
+    name: stardust-celery-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: celery -A celery_app worker --loglevel=info
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stardust-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: stardust-redis
+          property: connectionString
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: stardust-api
+          envVarKey: SECRET_KEY
+
+  # 4. Celery Beat Periodic Scheduler (Private Background Scheduler)
+  - type: worker
+    name: stardust-celery-beat
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: celery -A celery_app beat --loglevel=info
+    plan: free
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: stardust-redis
+          property: connectionString

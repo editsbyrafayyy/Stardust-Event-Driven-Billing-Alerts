@@ -23,7 +23,5 @@ USER appuser
 
 EXPOSE 8082
 
-# command to run the app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8082", "--reload"] 
-# 0.0.0.0 allows uvicorn to map the container to all ports available
-# which means accept traffic coming from any network interface. When Docker forwards traffic to eth0, the app receives it smoothly.
+# command to run the app (binds dynamically to cloud $PORT or defaults to 8082)
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8082}"]
