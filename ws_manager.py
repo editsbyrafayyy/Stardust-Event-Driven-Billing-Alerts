@@ -5,32 +5,30 @@
 from fastapi import WebSocket
 from uuid import UUID
 
-class ConnectionManager: # this is the class responsible for managing the web socket connections
-	# this class basically answers the question who owns the connection that has been made.
-
+class ConnectionManager:
 	def __init__(self) -> None:
-		 # dict mapping user_id against a list of connections that belong to that user
-		self.active_connections: dict[UUID, list[WebSocket]] = {} # 
+		# Dict mapping user_id to a list of active WebSocket connections for that user
+		self.active_connections: dict[UUID, list[WebSocket]] = {}
 
 	async def connect(self, user_id: UUID, websocket: WebSocket):
-		await websocket.accept()  # completes the WebSocket handshake - required before send/receive work
-		# this proess more or less looks like: user sends a HTTP request with a websocket upgrade header, which is received by 
-		# FastAPI. It provides the user with a WebSocket obj then. After which the code calls the websocket.accept() function and
-		# the server accepts the upgrade request and then the connection becomes duplex (allowing for 2 way communication)
-		if user_id not in self.active_connections: # checks for if the id is already present in the active connections dict
-			self.active_connections[user_id] = [] # if it isn't then create a list for connections
-		self.active_connections[user_id].append(websocket) # else just append a new connection in the list 
+		await websocket.accept()
+		if user_id not in self.active_connections:
+			self.active_connections[user_id] = []
+		self.active_connections[user_id].append(websocket)
 
 	def disconnect(self, user_id: UUID, websocket: WebSocket):
-		if user_id in self.active_connections: # if the connection already exists in the dict 
-			self.active_connections[user_id].remove(websocket) # just remove that specific connection
+		if user_id in self.active_connections:
+			if websocket in self.active_connections[user_id]:
+				self.active_connections[user_id].remove(websocket)
+			if not self.active_connections[user_id]:
+				del self.active_connections[user_id]
 
-			if not self.active_connections[user_id]:  # if there are no connections left in the list
-				del self.active_connections[user_id]   # remove the user id too from the dict completely so there are no empty slots in the dict
-
-	# the function allows for real time messages to be sent across all the websockets that the user has open.
 	async def send_to_user(self, user_id: UUID, message: str):
-		# if the user has no open connection right now, this silently does nothing -
-		# there's no queueing/persistence here, it's live-or-nothing
-		for connection in self.active_connections.get(user_id, []):
-			await connection.send_text(message)
+		# If user has no active connections, silently return (live-or-nothing delivery)
+		connections = list(self.active_connections.get(user_id, []))
+		for connection in connections:
+			try:
+				await connection.send_text(message)
+			except Exception:
+				# Socket failed or disconnected abruptly — clean it up
+				self.disconnect(user_id, connection)

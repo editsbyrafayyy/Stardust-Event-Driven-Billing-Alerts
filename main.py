@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
 from models import Subscription, User # the subs class from models.py
-from db import Base, engine, get_db # the Base class alongside engine from db.py
+from db import Base, engine, get_db, SessionLocal # the Base class alongside engine from db.py
 from sqlalchemy.orm import Session
 from schemas import UserCreate, UserOut
 from auth import create_access_token, get_current_user, get_user_from_token, hash_password, verify_password
@@ -13,6 +13,39 @@ from ws_manager import ConnectionManager
 import redis.asyncio as aioredis
 import asyncio
 import json
+import redis
+from redis.exceptions import RedisError
+from datetime import timedelta as td
+
+# plain (blocking) redis client for caching, these routes are still sync def like the rest of
+# the CRUD routes, so a blocking client is the consistent choice here (same reasoning as tasks.py)
+cache_client = redis.Redis(host="redis", port=6379, db=0, decode_responses=True)
+CACHE_TTL_SECONDS = 300  # 5 min safety net, in case an invalidation path is ever missed
+
+def invalidate_user_summary_cache(user_id: uuid.UUID) -> None:
+	"""
+	Evicts the user's cached summary from Redis upon any mutation (create, update, delete).
+	Catches RedisError to ensure DB transactions succeed even if the cache layer has hiccups.
+	"""
+	try:
+		cache_client.delete(f"summary:{user_id}")
+	except RedisError as e:
+		print(f"[Cache Warning] Failed to invalidate cache for user {user_id}: {e}")
+
+def normalize_to_monthly_cost(cost: float, billing_cycle: str) -> float:
+	"""
+	Normalizes different billing frequencies (yearly, quarterly, weekly, daily) into a standard monthly figure.
+	"""
+	cycle = billing_cycle.lower().strip()
+	if cycle in ("yearly", "annual", "annually"):
+		return cost / 12.0
+	elif cycle in ("quarterly",):
+		return cost / 3.0
+	elif cycle in ("weekly",):
+		return (cost * 52.0) / 12.0
+	elif cycle in ("daily",):
+		return cost * 30.0
+	return cost  # default assumed monthly
 
 Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
 # the connection with the information about the table layouts that it needs.
@@ -88,6 +121,8 @@ def write_subscriptions(sub: Subscriptions, db: Session = Depends(get_db), curr_
 	db.add(data_insertion)
 	db.commit()
 	db.refresh(data_insertion)
+
+	invalidate_user_summary_cache(curr_user.id)  # this user's cached summary is now stale — evict it
 	''' 
 	instead of 	return {"id": id, "name": sub.name, "cost": sub.cost, "billing_cycle": sub.billing_cycle, "description":sub.description} we use dict unpacking 
 	that makes the code easier to read as we already did turn the obj into a dict using the model.dump function
@@ -110,6 +145,8 @@ def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db), curr_user
 	db.delete(deleted_data) # we use .delete() method to remove the specific row
 	db.commit()
 
+	invalidate_user_summary_cache(curr_user.id)  # deletion changes total spend + renewal list — evict
+
 	return {"message": f"Subscription '{clean_data['name']}' has been deleted", "id": id, **clean_data}
 	# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
 
@@ -126,7 +163,66 @@ def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Se
 	db.commit()
 	db.refresh(existing_data)
 
+	invalidate_user_summary_cache(curr_user.id)  # cost/renewal_date may have changed — evict
+
 	return existing_data
+
+
+# ========================== Summary (Milestone 7 — Caching)
+
+class UpcomingRenewal(BaseModel):
+	id: uuid.UUID
+	name: str
+	cost: float
+	renewal_date: date
+
+class SummaryOut(BaseModel):
+	total_monthly_spend: float
+	upcoming_renewals: list[UpcomingRenewal]
+	cached: bool  # included so you can SEE the cache actually working, not just trust it silently
+
+@app.get("/subscriptions/summary", response_model=SummaryOut)
+def get_summary(db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)):
+	cache_key = f"summary:{curr_user.id}"
+
+	# 1. Try reading from cache with graceful degradation if Redis is down
+	try:
+		cached_value = cache_client.get(cache_key)
+		if cached_value:
+			data = json.loads(cached_value)
+			data["cached"] = True
+			return data
+	except RedisError as e:
+		print(f"[Cache Warning] Redis get failed: {e}. Falling back to DB.")
+
+	# 2. Cache miss or Redis unavailable — compute from PostgreSQL
+	subs = db.query(Subscription).filter(Subscription.owner_id == curr_user.id).all()
+
+	# Accurately normalize yearly, quarterly, weekly subscriptions into a monthly total
+	total_monthly_spend = round(
+		sum(normalize_to_monthly_cost(s.cost, s.billing_cycle) for s in subs), 2
+	)
+	upcoming = [
+		s for s in subs
+		if date.today() <= s.renewal_date <= date.today() + td(days=7)
+	]
+
+	result = {
+		"total_monthly_spend": total_monthly_spend,
+		"upcoming_renewals": [
+			{"id": str(s.id), "name": s.name, "cost": s.cost, "renewal_date": s.renewal_date.isoformat()}
+			for s in upcoming
+		],
+	}
+
+	# 3. Store freshly computed summary in Redis with TTL
+	try:
+		cache_client.setex(cache_key, CACHE_TTL_SECONDS, json.dumps(result))
+	except RedisError as e:
+		print(f"[Cache Warning] Redis setex failed: {e}")
+
+	result["cached"] = False
+	return result
 
 # ========================== Register
 
@@ -160,17 +256,22 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 	else:
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect Credentials")
 
-# ========================== WebSocket
+# ========================== WebSocket (Milestone 6 — Real-time)
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = Query(...), db: Session = Depends(get_db)):
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
 	# WebSockets can't send a normal Authorization header from browser JS, so the token travels as
-	# a query param instead: ws://.../ws?token=<jwt> — reuses the same verification logic as HTTP auth.
+	# a query param: ws://.../ws?token=<jwt>.
+	# We use a short-lived DB session to authenticate the user so we do NOT hold a PostgreSQL
+	# connection from the connection pool for the entire lifetime of the WebSocket connection.
+	db = SessionLocal()
 	try:
 		user = get_user_from_token(token, db)
 	except HTTPException:
-		await websocket.close(code=1008)  # 1008 = policy violation, the standard WS code for "auth failed"
+		await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
 		return
+	finally:
+		db.close()
 
 	await manager.connect(user.id, websocket)
 	try:
@@ -181,18 +282,28 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...), db: 
 
 
 async def redis_listener():
-	# runs for the lifetime of the app, independent of any single request.
-	# subscribes to the "alerts" channel that tasks.py publishes to when it creates an Alert row.
-	redis_conn = aioredis.Redis(host="redis", port=6379, db=0)
-	pubsub = redis_conn.pubsub()
-	await pubsub.subscribe("alerts")
-
-	async for message in pubsub.listen():
-		if message["type"] != "message":  # subscribe confirmations also flow through this stream — skip those
-			continue
-		data = json.loads(message["data"])
-		user_id = uuid.UUID(data["user_id"])
-		await manager.send_to_user(user_id, data["message"])
+	# Runs for the lifetime of the app, independent of any single request.
+	# Subscribes to the "alerts" channel that tasks.py publishes to when an Alert is created.
+	while True:
+		try:
+			redis_conn = aioredis.Redis(host="redis", port=6379, db=0)
+			pubsub = redis_conn.pubsub()
+			await pubsub.subscribe("alerts")
+			print("[WebSocket] Successfully subscribed to Redis 'alerts' channel.")
+			async for message in pubsub.listen():
+				if message["type"] != "message":  # skip subscribe confirmation messages
+					continue
+				try:
+					data = json.loads(message["data"])
+					user_id = uuid.UUID(data["user_id"])
+					await manager.send_to_user(user_id, data["message"])
+				except Exception as parse_err:
+					print(f"[WebSocket] Error parsing Redis alert message: {parse_err}")
+		except asyncio.CancelledError:
+			break
+		except Exception as conn_err:
+			print(f"[WebSocket] Redis pubsub connection error: {conn_err}. Retrying in 5s...")
+			await asyncio.sleep(5)
 
 @app.on_event("startup")
 async def start_redis_listener():
