@@ -1,5 +1,5 @@
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from config import settings
 from fastapi.security import OAuth2PasswordBearer
@@ -32,7 +32,7 @@ def verify_password(plain_password: str, hash_password: str) -> bool: # extracts
 # when the user logs in the first time, this is called
 def create_access_token(data: dict, expires_delta : timedelta = timedelta(minutes=30)) -> str:
 	to_encode = data.copy() # will return a shallow copy of the dict
-	expire = expires_delta + datetime.utcnow() # expire 30 minutes from current time
+	expire = expires_delta + datetime.now(timezone.utc) # expire 30 minutes from current time
 	to_encode.update({"exp":expire}) # add the expire time into the data that will be added into the payload of the jwt
 
 	return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) # return the jwt with its data, key and algo

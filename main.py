@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException,status, Depends, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, status, Depends, WebSocket, WebSocketDisconnect, Query
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
@@ -47,11 +48,49 @@ def normalize_to_monthly_cost(cost: float, billing_cycle: str) -> float:
 		return cost * 30.0
 	return cost  # default assumed monthly
 
-Base.metadata.create_all(bind=engine) # without bind=engine, we only will have the python objects containing the table layouts, bind=engine provides
-# the connection with the information about the table layouts that it needs.
-
-app = FastAPI() # create an object of the type
 manager = ConnectionManager() # single shared instance holding all active WebSocket connections, keyed by user id
+
+async def redis_listener():
+	# Runs for the lifetime of the app, independent of any single request.
+	# Subscribes to the "alerts" channel that tasks.py publishes to when an Alert is created.
+	while True:
+		try:
+			redis_conn = aioredis.Redis(host="redis", port=6379, db=0)
+			pubsub = redis_conn.pubsub()
+			await pubsub.subscribe("alerts")
+			print("[WebSocket] Successfully subscribed to Redis 'alerts' channel.")
+			async for message in pubsub.listen():
+				if message["type"] != "message":  # skip subscribe confirmation messages
+					continue
+				try:
+					data = json.loads(message["data"])
+					user_id = uuid.UUID(data["user_id"])
+					await manager.send_to_user(user_id, data["message"])
+				except Exception as parse_err:
+					print(f"[WebSocket] Error parsing Redis alert message: {parse_err}")
+		except asyncio.CancelledError:
+			break
+		except Exception as conn_err:
+			print(f"[WebSocket] Redis pubsub connection error: {conn_err}. Retrying in 5s...")
+			try:
+				await asyncio.sleep(5)
+			except asyncio.CancelledError:
+				break
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+	# Startup: Ensure tables exist and spawn background Redis Pub/Sub listener
+	try:
+		Base.metadata.create_all(bind=engine)
+	except Exception as e:
+		print(f"[DB Startup Warning] Could not initialize tables against primary DB: {e}")
+	redis_task = asyncio.create_task(redis_listener())
+	yield
+	# Shutdown: Cleanly cancel background tasks
+	if redis_task:
+		redis_task.cancel()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def read_root():
@@ -130,45 +169,9 @@ def write_subscriptions(sub: Subscriptions, db: Session = Depends(get_db), curr_
 	return data_insertion 
 
 
-# the shape of the data is a template that the return data has to fit in, any access data is filtered out/removed 
-@app.get("/subscriptions/{id}", response_model = SubscriptionOut) # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
-def get_subscriptions(id: uuid.UUID, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
-# a UUID object and reject requests that don't fit the UUID shape 
-	data_get = get_subscription_or_404(id, db, curr_user) # we simply pass the id into the function to get the entry that we are looking for  
-	return data_get # returns us an object with the 
-
-@app.delete("/subscriptions/{id}", response_model = SubscriptionDelete) # delete
-def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)):
-	deleted_data = get_subscription_or_404(id, db, curr_user)
-	clean_data = SubscriptionOut.model_validate(deleted_data).model_dump(exclude={"id"}) # this will return a python dict 
-	# model_validate converts the data into a pydantic model and model_dump then into a dict
-	db.delete(deleted_data) # we use .delete() method to remove the specific row
-	db.commit()
-
-	invalidate_user_summary_cache(curr_user.id)  # deletion changes total spend + renewal list — evict
-
-	return {"message": f"Subscription '{clean_data['name']}' has been deleted", "id": id, **clean_data}
-	# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
-
-@app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
-def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)): # we will need to convert the pydantic model into a dict hence the parameters
-	existing_data = get_subscription_or_404(id, db, curr_user)
-	new_data = update_data.model_dump(exclude_unset=True)
-	# exclude_unset only includes the fields that the client explicitly sent in the request
-
-	for key, val in new_data.items():
-		setattr(existing_data, key, val) # settattr bypasses the conventional dot notation limitations. As in this instance, we don't know the attr "key" has
-		# but using settatrr we can simply get that column name on runtime and modify the value
-
-	db.commit()
-	db.refresh(existing_data)
-
-	invalidate_user_summary_cache(curr_user.id)  # cost/renewal_date may have changed — evict
-
-	return existing_data
-
-
 # ========================== Summary (Milestone 7 — Caching)
+# Note: /subscriptions/summary MUST be defined BEFORE /subscriptions/{id}, otherwise FastAPI
+# matches "summary" as an {id} path parameter and attempts to parse it as a UUID (causing 422 errors).
 
 class UpcomingRenewal(BaseModel):
 	id: uuid.UUID
@@ -224,10 +227,57 @@ def get_summary(db: Session = Depends(get_db), curr_user: User = Depends(get_cur
 	result["cached"] = False
 	return result
 
+
+# ========================== Individual Subscription Operations
+
+# the shape of the data is a template that the return data has to fit in, any access data is filtered out/removed 
+@app.get("/subscriptions/{id}", response_model = SubscriptionOut) # {id} is the path parameter, anything inside the {} is treated as a variable by fastapi
+def get_subscriptions(id: uuid.UUID, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)): # we make sure that the id is mapped currently to its type, what this does is that fastapi will parse the inputs into
+# a UUID object and reject requests that don't fit the UUID shape 
+	data_get = get_subscription_or_404(id, db, curr_user) # we simply pass the id into the function to get the entry that we are looking for  
+	return data_get # returns us an object with the 
+
+@app.delete("/subscriptions/{id}", response_model = SubscriptionDelete) # delete
+def delete_subscriptions(id: uuid.UUID, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)):
+	deleted_data = get_subscription_or_404(id, db, curr_user)
+	clean_data = SubscriptionOut.model_validate(deleted_data).model_dump(exclude={"id"}) # this will return a python dict 
+	# model_validate converts the data into a pydantic model and model_dump then into a dict
+	db.delete(deleted_data) # we use .delete() method to remove the specific row
+	db.commit()
+
+	invalidate_user_summary_cache(curr_user.id)  # deletion changes total spend + renewal list — evict
+
+	return {"message": f"Subscription '{clean_data['name']}' has been deleted", "id": id, **clean_data}
+	# Subscription 'Netflix' has been deleted, this is how it will look like, this could have been made simplier if we didn't add the name
+
+@app.patch("/subscriptions/{id}", response_model = SubscriptionOut) # patch
+def update_subscriptions(id: uuid.UUID, update_data: SubscriptionsUpdate, db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)): # we will need to convert the pydantic model into a dict hence the parameters
+	existing_data = get_subscription_or_404(id, db, curr_user)
+	new_data = update_data.model_dump(exclude_unset=True)
+	# exclude_unset only includes the fields that the client explicitly sent in the request
+
+	for key, val in new_data.items():
+		setattr(existing_data, key, val) # settattr bypasses the conventional dot notation limitations. As in this instance, we don't know the attr "key" has
+		# but using settatrr we can simply get that column name on runtime and modify the value
+
+	db.commit()
+	db.refresh(existing_data)
+
+	invalidate_user_summary_cache(curr_user.id)  # cost/renewal_date may have changed — evict
+
+	return existing_data
+
 # ========================== Register
 
 @app.post("/register", response_model=UserOut) # we use the userout shape to ensure that pass never gets seen
 def add_user(user: UserCreate, db: Session = Depends(get_db)):
+	existing_user = db.query(User).filter(User.username == user.username).first()
+	if existing_user:
+		raise HTTPException(
+			status_code=status.HTTP_400_BAD_REQUEST,
+			detail="Username already registered"
+		)
+
 	user_data = user.model_dump() # convert the python obj into a dict
 	hashed_password = hash_password(user_data["password"]) # we pass the password for hashing
 
@@ -259,19 +309,14 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 # ========================== WebSocket (Milestone 6 — Real-time)
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...), db: Session = Depends(get_db)):
 	# WebSockets can't send a normal Authorization header from browser JS, so the token travels as
 	# a query param: ws://.../ws?token=<jwt>.
-	# We use a short-lived DB session to authenticate the user so we do NOT hold a PostgreSQL
-	# connection from the connection pool for the entire lifetime of the WebSocket connection.
-	db = SessionLocal()
 	try:
 		user = get_user_from_token(token, db)
 	except HTTPException:
 		await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
 		return
-	finally:
-		db.close()
 
 	await manager.connect(user.id, websocket)
 	try:
@@ -279,32 +324,3 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
 			await websocket.receive_text()  # keeps the connection alive / lets us detect disconnects
 	except WebSocketDisconnect:
 		manager.disconnect(user.id, websocket)
-
-
-async def redis_listener():
-	# Runs for the lifetime of the app, independent of any single request.
-	# Subscribes to the "alerts" channel that tasks.py publishes to when an Alert is created.
-	while True:
-		try:
-			redis_conn = aioredis.Redis(host="redis", port=6379, db=0)
-			pubsub = redis_conn.pubsub()
-			await pubsub.subscribe("alerts")
-			print("[WebSocket] Successfully subscribed to Redis 'alerts' channel.")
-			async for message in pubsub.listen():
-				if message["type"] != "message":  # skip subscribe confirmation messages
-					continue
-				try:
-					data = json.loads(message["data"])
-					user_id = uuid.UUID(data["user_id"])
-					await manager.send_to_user(user_id, data["message"])
-				except Exception as parse_err:
-					print(f"[WebSocket] Error parsing Redis alert message: {parse_err}")
-		except asyncio.CancelledError:
-			break
-		except Exception as conn_err:
-			print(f"[WebSocket] Redis pubsub connection error: {conn_err}. Retrying in 5s...")
-			await asyncio.sleep(5)
-
-@app.on_event("startup")
-async def start_redis_listener():
-	asyncio.create_task(redis_listener())  # fire-and-forget background task, runs alongside normal request handling
