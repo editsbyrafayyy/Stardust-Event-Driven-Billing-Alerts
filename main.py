@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, status, Depends, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, status, Depends, WebSocket, WebSocketDisconnect, Query, Request
 from contextlib import asynccontextmanager
+from rate_limiter import check_rate_limit
 from pydantic import BaseModel, Field
 import uuid # assigning unique ids to each entry in the table
 from typing import Optional # we use this for are patch requests, we set all the attr as optional so the user can modify only what they need to
@@ -186,6 +187,9 @@ class SummaryOut(BaseModel):
 
 @app.get("/subscriptions/summary", response_model=SummaryOut)
 def get_summary(db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)):
+	# Enforce rate limit (30 requests/minute per user) to prevent DoS
+	check_rate_limit(f"rl:summary:{curr_user.id}", limit=30, window_seconds=60)
+
 	cache_key = f"summary:{curr_user.id}"
 
 	# 1. Try reading from cache with graceful degradation if Redis is down
@@ -293,7 +297,11 @@ def add_user(user: UserCreate, db: Session = Depends(get_db)):
 	return data_insertion
 
 @app.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+	# Enforce rate limit (5 attempts/minute per IP) to prevent brute-force attacks
+	client_ip = request.client.host if request.client else "unknown"
+	check_rate_limit(f"rl:login:{client_ip}", limit=5, window_seconds=60)
+
 	result = db.query(User).filter(User.username == form_data.username).first() # fetch the results if user matches
 
 	if result and verify_password(form_data.password, result.hashed_password): 

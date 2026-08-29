@@ -130,4 +130,31 @@ def mock_redis_cache():
 	     patch("main.cache_client.delete", side_effect=mock_delete):
 		yield fake_redis_storage
 
+@pytest.fixture(autouse=True)
+def mock_redis_rate_limiter():
+	"""
+	Mocks the Redis rate-limiter atomic pipeline in-memory during tests for fast and deterministic
+	rate-limit testing.
+	"""
+	from unittest.mock import patch
+	counters = {}
+
+	class MockPipeline:
+		def __init__(self):
+			self._ops = []
+		def incr(self, key):
+			def op():
+				counters[key] = counters.get(key, 0) + 1
+				return counters[key]
+			self._ops.append(op)
+			return self
+		def expire(self, key, seconds):
+			self._ops.append(lambda: True)
+			return self
+		def execute(self):
+			return [op() for op in self._ops]
+
+	with patch("rate_limiter.rate_limit_client.pipeline", side_effect=lambda: MockPipeline()):
+		yield counters
+
 
