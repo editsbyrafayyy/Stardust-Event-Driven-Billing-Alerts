@@ -1,4 +1,4 @@
-# 🌌 StarDust — Event-Driven Subscription & Billing Alert Engine
+# StarDust — Event-Driven Subscription & Billing Alerts
 
 [![CI - Test Suite](https://github.com/editsbyrafayyy/Stardust-Event-Driven-Billing-Alert-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/editsbyrafayyy/Stardust-Event-Driven-Billing-Alert-Engine/actions)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
@@ -14,7 +14,7 @@
 
 ---
 
-## 🏛️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TD
@@ -66,7 +66,7 @@ flowchart TD
 
 ---
 
-## ⚡ Core Engineering Features
+## Core Engineering Features
 
 ### 1. Multi-Tenant Security & Authentication
 * **Password Hashing**: Passwords are never stored in plaintext — hashed using `passlib` + `bcrypt` with salt and 12 cost-factor rounds.
@@ -101,7 +101,7 @@ flowchart TD
 
 ---
 
-## 🧪 Comprehensive Automated Testing Suite
+## Comprehensive Automated Testing Suite
 
 The repository includes **18 automated unit and integration tests** and an **End-to-End (E2E) Docker test suite**:
 
@@ -126,7 +126,7 @@ pytest
 
 ---
 
-## 🛠️ API Reference
+## API Reference
 
 ### Authentication
 * `POST /register` — Register a new account (`{"username": "...", "password": "..."}`)
@@ -144,7 +144,7 @@ pytest
 
 ---
 
-## 🚀 Running Locally with Docker Compose
+## Running Locally with Docker Compose
 
 ### Prerequisites
 * [Docker](https://docs.docker.com/get-docker/) & Docker Compose
@@ -178,7 +178,7 @@ Open your browser and navigate to:
 
 ---
 
-## ☁️ Cloud Deployment (Render / Railway Blueprint)
+## Cloud Deployment (Render / Railway Blueprint)
 
 The repository includes an Infrastructure-as-Code blueprint ([`render.yaml`](file:///home/rafay/Projects/StarDust/render.yaml)) configured for one-click deployment:
 
@@ -193,5 +193,5 @@ The repository includes an Infrastructure-as-Code blueprint ([`render.yaml`](fil
 
 ---
 
-## 📄 License
+## License
 MIT License. Built for educational and portfolio demonstration of modern asynchronous backend system design.
