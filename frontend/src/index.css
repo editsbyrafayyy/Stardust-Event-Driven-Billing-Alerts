@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-body: 'Lora', Georgia, serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-condensed: 'Barlow Condensed', sans-serif;
+
+  --color-cream: #FBF4EF;
+  --color-ink: #2A2420;
+  --color-muted: #6B6057;
+  --color-border: #E0D8CE;
+  --color-surface: #F3EDE4;
+  --color-surface-2: #EDE6DC;
+  --color-terminal: #4A7C59;
+  --color-terminal-bg: #0F1A13;
+  --color-terracotta: #C84B31;
+  --color-amber: #C5A059;
+}
+
+/* Base Body Styles */
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  min-height: 100vh;
+  position: relative;
+  margin: 0;
+}
+
+/* Subtle 80px x 80px Grid Overlay */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: 
+    linear-gradient(to right, rgba(224, 216, 206, 0.45) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(224, 216, 206, 0.45) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, #000 30%, transparent 100%);
+  z-index: 0;
+}
+
+.font-serif-display {
+  font-family: var(--font-serif);
+}
+
+.font-mono-numbers {
+  font-family: var(--font-mono);
+}
+
+.font-condensed-label {
+  font-family: var(--font-condensed);
+}

@@ -50,3 +50,4 @@ websockets==16.1
 pytest
 httpx
 pytest-asyncio
+alembic

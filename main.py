@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, status, Depends, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from rate_limiter import check_rate_limit
 from pydantic import BaseModel, Field
@@ -93,6 +94,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],
+	allow_credentials=True,
+	allow_methods=["*"],
+	allow_headers=["*"],
+)
+
 @app.get("/")
 def read_root():
 	return {"Hey" : "Working"}
@@ -168,6 +177,12 @@ def write_subscriptions(sub: Subscriptions, db: Session = Depends(get_db), curr_
 	that makes the code easier to read as we already did turn the obj into a dict using the model.dump function
 	'''
 	return data_insertion 
+
+
+@app.get("/subscriptions", response_model=list[SubscriptionOut])
+def list_subscriptions(db: Session = Depends(get_db), curr_user: User = Depends(get_current_user)):
+	"""Returns all active subscriptions belonging to the authenticated user."""
+	return db.query(Subscription).filter(Subscription.owner_id == curr_user.id).order_by(Subscription.renewal_date.asc()).all()
 
 
 # ========================== Summary (Milestone 7 — Caching)

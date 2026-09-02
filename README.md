@@ -7,7 +7,8 @@
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
 ![Celery](https://img.shields.io/badge/Celery-5.6-37814A?logo=celery&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
-![Pytest](https://img.shields.io/badge/Tests-18%20Passed-brightgreen?logo=pytest&logoColor=white)
+![Pytest](https://img.shields.io/badge/Tests-19%20Passed-brightgreen?logo=pytest&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
 **StarDust** is a production-grade, event-driven subscription management and real-time billing alert engine. Built with **FastAPI**, **PostgreSQL**, **Redis**, and **Celery**, it tracks recurring billing cycles across mixed frequencies (yearly, quarterly, weekly, daily), aggregates analytics via Redis Cache-Aside, schedules periodic scans with Celery Beat, and delivers real-time renewal alerts directly to browser clients over full-duplex WebSockets using Redis Pub/Sub.
 
